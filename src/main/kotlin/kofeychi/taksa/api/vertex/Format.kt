@@ -1,8 +1,7 @@
-package stellar.ether.api.rendering
+package kofeychi.taksa.api.vertex
 
 import org.lwjgl.opengl.GL20.*
 import org.lwjgl.opengl.GL33.glVertexAttribDivisor
-import kotlin.random.Random
 
 @DslMarker
 @Target(AnnotationTarget.CLASS, AnnotationTarget.TYPE)

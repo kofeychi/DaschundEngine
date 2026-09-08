@@ -1,7 +1,7 @@
 package kofeychi.taksa.api.vertex.builder
 
 import org.lwjgl.system.MemoryUtil
-import stellar.ether.api.rendering.Format
+import kofeychi.taksa.api.vertex.Format
 import java.io.Closeable
 import kotlin.math.max
 
@@ -36,6 +36,7 @@ interface Builder : Closeable {
     fun pushInt(value: Int)
     fun putByte(value: Byte)
     fun pushFloat3(x: Float, y: Float, z: Float)
+    fun pushFloat4(x: Float, y: Float, z: Float, w: Float)
 
     fun build(): Slice
     fun view(): Slice

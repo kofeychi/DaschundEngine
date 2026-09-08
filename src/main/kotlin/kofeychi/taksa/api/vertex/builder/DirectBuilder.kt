@@ -1,7 +1,7 @@
 package kofeychi.taksa.api.vertex.builder
 
 import org.lwjgl.system.MemoryUtil
-import stellar.ether.api.rendering.Format
+import kofeychi.taksa.api.vertex.Format
 
 class DirectBuilder(
     initialCapacity: Int,
@@ -37,6 +37,18 @@ class DirectBuilder(
         MemoryUtil.memPutFloat(address + pointer, y)
         pointer += Float.SIZE_BYTES
         MemoryUtil.memPutFloat(address + pointer, z)
+        pointer += Float.SIZE_BYTES
+    }
+
+    override fun pushFloat4(x: Float, y: Float, z: Float, w: Float) {
+        ensureCapacity(Float.SIZE_BYTES * 4)
+        MemoryUtil.memPutFloat(address + pointer, x)
+        pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, y)
+        pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, z)
+        pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, w)
         pointer += Float.SIZE_BYTES
     }
 }
