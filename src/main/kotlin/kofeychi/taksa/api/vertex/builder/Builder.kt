@@ -40,6 +40,10 @@ interface Builder : Closeable {
 
     fun build(): Slice
     fun view(): Slice
+
+    fun <R> build(use: (Slice) -> R): R {
+        return build().use(use)
+    }
 }
 
 abstract class AbstractVertexBuilder(

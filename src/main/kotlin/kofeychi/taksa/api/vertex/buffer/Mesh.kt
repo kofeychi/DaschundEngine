@@ -1,12 +1,14 @@
 package kofeychi.taksa.api.vertex.buffer
 
 import kofeychi.taksa.api.BufferTarget
+import kofeychi.taksa.api.BufferUsage
 import kofeychi.taksa.api.DrawMode
 import kofeychi.taksa.api.TypesafeGL
 import kofeychi.taksa.api.vertex.Buffer
 import kofeychi.taksa.api.vertex.DirectBuffer
 import kofeychi.taksa.api.vertex.Format
 import kofeychi.taksa.api.vertex.VertexArray
+import kofeychi.taksa.api.vertex.builder.Builder
 import kofeychi.taksa.api.vertex.builder.Slice
 import java.io.Closeable
 
@@ -22,10 +24,12 @@ interface IMesh : Closeable {
 class Mesh(
     format: Format,
     val drawMode: DrawMode,
+    usage: BufferUsage = BufferUsage.STREAM_DRAW
 ) : IMesh {
     private val vao: VertexArray = VertexArray(format)
     private val vbo: Buffer = DirectBuffer(
-        BufferTarget.ARRAY_BUFFER
+        BufferTarget.ARRAY_BUFFER,
+        usage,
     )
     private var vertices = 0
 
@@ -33,11 +37,17 @@ class Mesh(
         vertices = slice.vertexCount
         vao.bind()
         vbo.bind()
-        vbo.upload(slice)
-        vao.apply()
+        try {
+            vbo.upload(slice)
+            vao.apply()
+        } finally {
+            vao.unbind()
+            vbo.unbind()
+        }
+    }
 
-        vao.unbind()
-        vbo.unbind()
+    fun upload(builder: Builder) {
+        builder.build(::upload)
     }
 
     override fun bind() {

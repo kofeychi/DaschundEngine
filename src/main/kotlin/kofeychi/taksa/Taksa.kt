@@ -149,15 +149,14 @@ object Taksa {
             0
         }
 
-
-        val built = b.build()
-
         val mesh = Mesh(
             formatEbanat,
             DrawMode.QUADS,
+            BufferUsage.STATIC_DRAW
         )
-        mesh.bind()
-        mesh.upload(built)
+        mesh.upload(b)
+
+
 
         val fps = FpsController { 60.0 }
         while(!glfwWindowShouldClose(window)) {
@@ -185,12 +184,8 @@ object Taksa {
 }
 
 fun main() {
-    Configuration.DEBUG_FUNCTIONS.set(true)
-    Configuration.DEBUG_MEMORY_ALLOCATOR.set(true)
-    Configuration.DEBUG_LOADER.set(true)
-    Configuration.DEBUG_STACK.set(true)
-    Configuration.DEBUG.set(true)
-    Taksa.init()
-    GLUtil.setupDebugMessageCallback()
-    Taksa.loopaZalupa()
+    DebugRunner.run(
+        Taksa::init,
+        Taksa::loopaZalupa,
+    )
 }

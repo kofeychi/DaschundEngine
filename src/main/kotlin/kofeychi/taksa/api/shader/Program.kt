@@ -11,6 +11,8 @@ import java.io.Closeable
 class Program : Closeable {
     val id = TypesafeGL.createProgram()
 
+
+
     companion object {
         fun create(action: Program.() -> Unit): Program {
             val program = Program()
