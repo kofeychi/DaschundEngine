@@ -14,8 +14,7 @@ object DebugRunner {
         Configuration.DEBUG_STACK.set(true)
         Configuration.DEBUG.set(true)
         init()
-        val cb = GLUtil.setupDebugMessageCallback()
+        GLUtil.setupDebugMessageCallback()?.close()
         action()
-        cb?.close()
     }
 }

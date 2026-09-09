@@ -19,7 +19,7 @@ dependencies {
     var libs = listOf(
         "lwjgl",
         "lwjgl-glfw",
-        "lwjgl-opengl"
+        "lwjgl-opengl",
     )
 
     libs.forEach {

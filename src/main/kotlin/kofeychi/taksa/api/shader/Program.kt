@@ -1,17 +1,13 @@
 package kofeychi.taksa.api.shader
 
 import kofeychi.taksa.api.ProgramId
-import kofeychi.taksa.api.ShaderId
 import kofeychi.taksa.api.ShaderType
 import kofeychi.taksa.api.TypesafeGL
-import org.lwjgl.opengl.GL11
-import org.lwjgl.opengl.GL20
+import kofeychi.taksa.api.shader.uniform.Uniform
 import java.io.Closeable
 
 class Program : Closeable {
     val id = TypesafeGL.createProgram()
-
-
 
     companion object {
         fun create(action: Program.() -> Unit): Program {
@@ -22,6 +18,7 @@ class Program : Closeable {
     }
 
     private val shaders = mutableMapOf<ShaderType, Shader>()
+    private val uniforms = mutableMapOf<String, Uniform>()
 
     init {
         if(id.id == 0) throw ShaderException("Could not create program")
@@ -52,6 +49,21 @@ class Program : Closeable {
     }
 
 
+    fun uniform(name: String): Uniform {
+        require(name.isNotBlank()) { "Uniform name must not be blank." }
+        return uniforms.getOrPut(name) { Uniform(this, name) }
+    }
+
+    fun useUniform(name: String,action: Uniform.() -> Unit) {
+        uniform(name).action()
+    }
+
+    fun hasUniform(name: String): Boolean = TypesafeGL.getUniformLocation(id, name) >= 0
+
+    fun clearUniformCache() {
+        uniforms.clear()
+    }
+
     fun bind() {
         TypesafeGL.useProgram(id)
     }
@@ -61,6 +73,7 @@ class Program : Closeable {
     }
 
     override fun close() {
+        uniforms.clear()
         unbind()
         if (id.id == 0) return
         TypesafeGL.deleteProgram(id)

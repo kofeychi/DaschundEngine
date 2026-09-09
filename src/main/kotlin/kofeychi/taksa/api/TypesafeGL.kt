@@ -1,5 +1,6 @@
 package kofeychi.taksa.api
 
+import kofeychi.taksa.api.shader.uniform.Uniform
 import org.lwjgl.opengl.GL11
 import org.lwjgl.opengl.GL15
 import org.lwjgl.opengl.GL20
@@ -186,6 +187,78 @@ object TypesafeGL {
     }
 
 
+
+    fun getUniformLocation(program: ProgramId, name: String): Int {
+        return GL20.glGetUniformLocation(program.id, name)
+    }
+
+    fun getActiveUniformCount(program: ProgramId): Int {
+        return GL20.glGetProgrami(program.id, GL20.GL_ACTIVE_UNIFORMS)
+    }
+
+    fun getActiveUniform(program: ProgramId, index: Int): ActiveUniform {
+        org.lwjgl.system.MemoryStack.stackPush().use { stack ->
+            val size = stack.mallocInt(1)
+            val type = stack.mallocInt(1)
+            val name = GL20.glGetActiveUniform(program.id, index, size, type)
+            return ActiveUniform(name, size.get(0), type.get(0))
+        }
+    }
+
+    fun getUniformType(program: ProgramId, name: String): Uniform.Type {
+        val uniform = findActiveUniform(program, name)
+        return Uniform.Type.from(uniform?.type ?: -1)
+    }
+
+    fun getUniformArrayLength(program: ProgramId, name: String): Int {
+        return findActiveUniform(program, name)?.size ?: 0
+    }
+
+    private fun findActiveUniform(program: ProgramId, requestedName: String): ActiveUniform? {
+        repeat(getActiveUniformCount(program)) { index ->
+            val uniform = getActiveUniform(program, index)
+            if (uniform.name == requestedName || uniform.name.removeSuffix("[0]") == requestedName) {
+                return uniform
+            }
+        }
+        return null
+    }
+
+    fun uniform1f(program: ProgramId, location: Int, value: Float) { GL20.glUniform1f(location, value) }
+    fun uniform2f(program: ProgramId, location: Int, x: Float, y: Float) { GL20.glUniform2f(location, x, y) }
+    fun uniform3f(program: ProgramId, location: Int, x: Float, y: Float, z: Float) { GL20.glUniform3f(location, x, y, z) }
+    fun uniform4f(program: ProgramId, location: Int, x: Float, y: Float, z: Float, w: Float) { GL20.glUniform4f(location, x, y, z, w) }
+    fun uniform1i(program: ProgramId, location: Int, value: Int) { GL20.glUniform1i(location, value) }
+    fun uniform2i(program: ProgramId, location: Int, x: Int, y: Int) { GL20.glUniform2i(location, x, y) }
+    fun uniform3i(program: ProgramId, location: Int, x: Int, y: Int, z: Int) { GL20.glUniform3i(location, x, y, z) }
+    fun uniform4i(program: ProgramId, location: Int, x: Int, y: Int, z: Int, w: Int) { GL20.glUniform4i(location, x, y, z, w) }
+
+    fun uniform1fv(program: ProgramId, location: Int, values: FloatArray) { GL20.glUniform1fv(location, values) }
+    fun uniform1iv(program: ProgramId, location: Int, values: IntArray) { GL20.glUniform1iv(location, values) }
+
+    fun uniformMatrix2f(program: ProgramId, location: Int, transpose: Boolean, value: org.joml.Matrix2f) {
+        org.lwjgl.system.MemoryStack.stackPush().use { stack ->
+            GL20.glUniformMatrix2fv(location, transpose, value.get(stack.mallocFloat(4)))
+        }
+    }
+
+    fun uniformMatrix3f(program: ProgramId, location: Int, transpose: Boolean, value: org.joml.Matrix3f) {
+        org.lwjgl.system.MemoryStack.stackPush().use { stack ->
+            GL20.glUniformMatrix3fv(location, transpose, value.get(stack.mallocFloat(9)))
+        }
+    }
+
+    fun uniformMatrix4f(program: ProgramId, location: Int, transpose: Boolean, value: org.joml.Matrix4f) {
+        org.lwjgl.system.MemoryStack.stackPush().use { stack ->
+            GL20.glUniformMatrix4fv(location, transpose, value.get(stack.mallocFloat(16)))
+        }
+    }
+
+    data class ActiveUniform(
+        val name: String,
+        val size: Int,
+        val type: Int,
+    )
 
     fun genVertexArrays(): VertexArrayId {
         return VertexArrayId(GL30.glGenVertexArrays())
