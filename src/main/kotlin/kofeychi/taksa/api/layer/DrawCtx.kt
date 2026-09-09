@@ -12,8 +12,8 @@ class DrawCtx(
 ) {
 
     init {
-        require(width > 0) { "GuiGraphics width must be positive." }
-        require(height > 0) { "GuiGraphics height must be positive." }
+        require(width > 0) { "width must be positive." }
+        require(height > 0) { "height must be positive." }
     }
 
     fun fill(left: Float, top: Float, right: Float, bottom: Float, color: Int) {
