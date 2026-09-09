@@ -8,6 +8,10 @@ class ValidatingBuilder(
     format: Format,
 ) : AbstractVertexBuilder(initialCapacity, format) {
 
+    init {
+        println("i hope this is not a prod env!")
+    }
+
     private val expectedElementsPerVertex: Int = format.elements.sumOf { it.count }
     private var currentVertexElementCount: Int = 0
     private var currentElementIndex: Int = 0
