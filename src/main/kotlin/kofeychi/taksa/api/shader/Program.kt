@@ -4,6 +4,7 @@ import org.lwjgl.opengl.GL11
 import org.lwjgl.opengl.GL20
 import java.io.Closeable
 
+
 class Program : Closeable {
     val id: Int = GL20.glCreateProgram()
 

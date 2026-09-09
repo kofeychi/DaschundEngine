@@ -103,33 +103,44 @@ object Taksa {
             formatEbanat
         )
 
+        fun Builder.quad(
+            mat: Matrix4f,
+            x: Float,
+            y: Float,
+            w: Float,
+            h: Float,
+            r: Float,
+            g: Float,
+            b: Float
+        ) {
+            pushFloat3(mat, Vector3f(x, y, 0f))
+            pushFloat4(r,g,b, 1f)
+            push()
+            pushFloat3(mat, Vector3f(x+w, y, 0f))
+            pushFloat4(r,g,b, 1f)
+            push()
+            pushFloat3(mat, Vector3f(x+w, y+h, 0f))
+            pushFloat4(r,g,b, 1f)
+            push()
+            pushFloat3(mat, Vector3f(x, y+h, 0f))
+            pushFloat4(r,g,b, 1f)
+            push()
+
+        }
+
         b.run {
-            pushFloat3(mat, Vector3f(0f, 0f, 0f))
-            pushFloat4(0f, 1f, 1f, 1f)
-            push()
-            pushFloat3(mat, Vector3f(870f, 0f, 0f))
-            pushFloat4(0f, 1f, 1f, 1f)
-            push()
-            pushFloat3(mat, Vector3f(870f, 870f/2, 0f))
-            pushFloat4(0f, 1f, 1f, 1f)
-            push()
-            pushFloat3(mat, Vector3f(0f, 870f/2, 0f))
-            pushFloat4(0f, 1f, 1f, 1f)
-            push()
-
-            pushFloat3(mat, Vector3f(0f, 870f/2, 0f))
-            pushFloat4(1f, 1f, 0f, 1f)
-            push()
-            pushFloat3(mat, Vector3f(870f, 870f/2, 0f))
-            pushFloat4(1f, 1f, 0f, 1f)
-            push()
-            pushFloat3(mat, Vector3f(870f, 870f, 0f))
-            pushFloat4(1f, 1f, 0f, 1f)
-            push()
-            pushFloat3(mat, Vector3f(0f, 870f, 0f))
-            pushFloat4(1f, 1f, 0f, 1f)
-            push()
-
+            b.quad(
+                mat,
+                0f,0f,
+                870f,870f/2,
+                0f,0f,1f
+            )
+            b.quad(
+                mat,
+                0f,870f/2,
+                870f,870f/2,
+                1f,1f,0f
+            )
             0
         }
 
