@@ -15,8 +15,8 @@ import org.lwjgl.opengl.GL30
 
 @JvmInline value class ShaderType(val glEnum: Int) {
     companion object {
-        val VERTEX_SHADER = ShaderType(GL20.GL_VERTEX_SHADER)
-        val FRAGMENT_SHADER = ShaderType(GL20.GL_FRAGMENT_SHADER)
+        val VERTEX = ShaderType(GL20.GL_VERTEX_SHADER)
+        val FRAGMENT = ShaderType(GL20.GL_FRAGMENT_SHADER)
     }
 }
 
@@ -76,6 +76,10 @@ object TypesafeGL {
 
     fun deleteShader(shader: ShaderId) {
         GL20.glDeleteShader(shader.id)
+    }
+
+    fun detachShader(program: ProgramId, shader: ShaderId) {
+        GL20.glDetachShader(program.id,shader.id)
     }
 
 

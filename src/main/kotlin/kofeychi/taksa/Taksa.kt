@@ -2,7 +2,6 @@ package kofeychi.taksa
 
 import kofeychi.taksa.api.*
 import kofeychi.taksa.api.shader.*
-import kofeychi.taksa.api.shader.ShaderType
 import kofeychi.taksa.api.vertex.*
 import kofeychi.taksa.api.vertex.buffer.Mesh
 import kofeychi.taksa.api.vertex.builder.*
@@ -11,6 +10,8 @@ import org.lwjgl.glfw.*
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.opengl.GL
 import org.lwjgl.opengl.GL11.*
+import org.lwjgl.opengl.GLUtil
+import org.lwjgl.system.Configuration
 import org.lwjgl.system.MemoryUtil
 
 fun Builder.pushFloat3(mat: Matrix4f, vec: Vector3f) {
@@ -59,8 +60,8 @@ object Taksa {
     }
 
     fun loopaZalupa() {
-        val program = Program()
-            .attach(
+        val program = Program.create {
+            attach(
                 Shader(
                     ShaderType.VERTEX,
                     ShaderSource(
@@ -79,7 +80,8 @@ object Taksa {
                         """.trimIndent()
                     )
                 )
-            ).attach(
+            )
+            attach(
                 Shader(
                     ShaderType.FRAGMENT,
                     ShaderSource(
@@ -95,7 +97,10 @@ object Taksa {
                         """.trimIndent()
                     )
                 )
-            ).link()
+            )
+            link()
+            deleteShaders()
+        }
 
         val mat = Matrix4f().identity().ortho(0f, 870f,870f, 0f, -100f,100f)
         val b = ValidatingBuilder(
@@ -180,6 +185,12 @@ object Taksa {
 }
 
 fun main() {
+    Configuration.DEBUG_FUNCTIONS.set(true)
+    Configuration.DEBUG_MEMORY_ALLOCATOR.set(true)
+    Configuration.DEBUG_LOADER.set(true)
+    Configuration.DEBUG_STACK.set(true)
+    Configuration.DEBUG.set(true)
     Taksa.init()
+    GLUtil.setupDebugMessageCallback()
     Taksa.loopaZalupa()
 }

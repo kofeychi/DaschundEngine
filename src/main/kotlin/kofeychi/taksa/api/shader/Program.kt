@@ -1,71 +1,66 @@
 package kofeychi.taksa.api.shader
 
+import kofeychi.taksa.api.ProgramId
+import kofeychi.taksa.api.ShaderId
+import kofeychi.taksa.api.ShaderType
+import kofeychi.taksa.api.TypesafeGL
 import org.lwjgl.opengl.GL11
 import org.lwjgl.opengl.GL20
 import java.io.Closeable
 
-
 class Program : Closeable {
-    val id: Int = GL20.glCreateProgram()
+    val id = TypesafeGL.createProgram()
 
-    private val shaders = mutableListOf<Shader>()
-    private val uniformLocationCache = mutableMapOf<String, Int>()
+    companion object {
+        fun create(action: Program.() -> Unit): Program {
+            val program = Program()
+            action(program)
+            return program
+        }
+    }
+
+    private val shaders = mutableMapOf<ShaderType, Shader>()
 
     init {
-        if (id == 0) {
-            throw ShaderException("Failed to create a valid shader program object.")
-        }
+        if(id.id == 0) throw ShaderException("Could not create program")
     }
 
-    fun attach(shader: Shader): Program {
-        GL20.glAttachShader(id, shader.id)
-        shaders.add(shader)
-        return this
+    fun attach(shader: Shader) {
+        if(shaders.containsKey(shader.type)) throw ShaderException("Shader '${shader.type}' already exists")
+        TypesafeGL.attachShader(id,shader.id)
+        shaders[shader.type] = shader
     }
 
-    fun link(deleteShadersAfter: Boolean = true): Program {
-        GL20.glLinkProgram(id)
+    fun link() {
+        TypesafeGL.linkProgram(id)
 
-        val status = GL20.glGetProgrami(id, GL20.GL_LINK_STATUS)
-        if (status == GL11.GL_FALSE) {
-            val infoLog = GL20.glGetProgramInfoLog(id)
+        if(!TypesafeGL.getProgramLinkStatus(id)) {
+            val info = TypesafeGL.getProgramInfoLog(id)
             close()
-            throw ShaderException("Failed to link shader program.\nInfo Log:\n$infoLog")
+            throw ShaderException("Failed to link shader program.\nInfo Log:\n$info")
         }
-
-        if (deleteShadersAfter) {
-            shaders.forEach {
-                GL20.glDetachShader(id, it.id)
-                it.close()
-            }
-            shaders.clear()
-        }
-
-        return this
     }
+
+    fun deleteShaders() {
+        shaders.values.forEach {
+            TypesafeGL.detachShader(id,it.id)
+            it.close()
+        }
+        shaders.clear()
+    }
+
 
     fun bind() {
-        GL20.glUseProgram(id)
+        TypesafeGL.useProgram(id)
     }
 
     fun unbind() {
-        GL20.glUseProgram(0)
+        TypesafeGL.useProgram(ProgramId(0))
     }
 
     override fun close() {
         unbind()
-        if (id != 0) {
-            GL20.glDeleteProgram(id)
-        }
-    }
-
-    private fun getUniformLocation(name: String): Int {
-        return uniformLocationCache.getOrPut(name) {
-            val location = GL20.glGetUniformLocation(id, name)
-            if (location == - 1) {
-                println("Failed to get uniform location for $name")
-            }
-            location
-        }
+        if (id.id == 0) return
+        TypesafeGL.deleteProgram(id)
     }
 }

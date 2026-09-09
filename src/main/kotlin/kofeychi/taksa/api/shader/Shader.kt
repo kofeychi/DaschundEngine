@@ -1,38 +1,33 @@
 package kofeychi.taksa.api.shader
 
+import kofeychi.taksa.api.ShaderType
+import kofeychi.taksa.api.TypesafeGL
+import kofeychi.taksa.api.VertexArrayId
 import org.lwjgl.opengl.GL11
 import org.lwjgl.opengl.GL20
 import java.io.Closeable
 
 class Shader(
     val type: ShaderType,
-    val source: ShaderSource
+    source: ShaderSource,
 ) : Closeable {
-    val id: Int = GL20.glCreateShader(type.glEnum)
+    val id = TypesafeGL.createShader(type)
 
     init {
-        if (id == 0) {
-            throw ShaderException("Failed to create a valid shader object of type $type.")
-        }
+        if(id.id == 0) throw ShaderException("Could not create shader of type $type")
 
-        compile()
-    }
+        TypesafeGL.shaderSource(id,source.source)
+        TypesafeGL.compileShader(id)
 
-    private fun compile() {
-        GL20.glShaderSource(id, source.source)
-        GL20.glCompileShader(id)
-
-        val status = GL20.glGetShaderi(id, GL20.GL_COMPILE_STATUS)
-        if (status == GL11.GL_FALSE) {
-            val infoLog = GL20.glGetShaderInfoLog(id)
-            GL20.glDeleteShader(id)
-            throw ShaderException("Failed to compile ${type.name} shader.\nInfo Log:\n$infoLog")
+        if(!TypesafeGL.getShaderCompileStatus(id)) {
+            val info = TypesafeGL.getShaderInfoLog(id)
+            close()
+            throw ShaderException("Failed to compile ${type} shader.\nInfo Log:\n$info")
         }
     }
 
     override fun close() {
-        if (id != 0) {
-            GL20.glDeleteShader(id)
-        }
+        if(id.id == 0) return
+        TypesafeGL.deleteShader(id)
     }
 }
