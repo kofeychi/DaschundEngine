@@ -4,6 +4,79 @@ import org.lwjgl.opengl.GL11
 import org.lwjgl.opengl.GL15
 import org.lwjgl.opengl.GL20
 import org.lwjgl.opengl.GL30
+import org.lwjgl.opengl.GL12
+import org.lwjgl.opengl.GL13
+import org.lwjgl.opengl.GL14
+
+
+@JvmInline value class TextureId(val id: Int)
+
+@JvmInline value class TextureTarget(val glEnum: Int) {
+    companion object {
+        val TEXTURE_2D = TextureTarget(GL11.GL_TEXTURE_2D)
+    }
+}
+
+@JvmInline value class TextureFormat(val glEnum: Int) {
+    companion object {
+        val RED = TextureFormat(GL11.GL_RED)
+        val RG = TextureFormat(GL30.GL_RG)
+        val RGB = TextureFormat(GL11.GL_RGB)
+        val RGBA = TextureFormat(GL11.GL_RGBA)
+        val RED_INTEGER = TextureFormat(GL30.GL_RED_INTEGER)
+        val RG_INTEGER = TextureFormat(GL30.GL_RG_INTEGER)
+        val RGB_INTEGER = TextureFormat(GL30.GL_RGB_INTEGER)
+        val RGBA_INTEGER = TextureFormat(GL30.GL_RGBA_INTEGER)
+    }
+}
+
+@JvmInline value class TextureInternalFormat(val glEnum: Int) {
+    companion object {
+        val RG8 = TextureInternalFormat(GL30.GL_RG8)
+        val RGB8 = TextureInternalFormat(GL11.GL_RGB8)
+        val RGBA8 = TextureInternalFormat(GL11.GL_RGBA8)
+
+        val R16F = TextureInternalFormat(GL30.GL_R16F)
+        val RG16F = TextureInternalFormat(GL30.GL_RG16F)
+        val RGB16F = TextureInternalFormat(GL30.GL_RGB16F)
+        val RGBA16F = TextureInternalFormat(GL30.GL_RGBA16F)
+
+        val R32F = TextureInternalFormat(GL30.GL_R32F)
+        val RG32F = TextureInternalFormat(GL30.GL_RG32F)
+        val RGB32F = TextureInternalFormat(GL30.GL_RGB32F)
+        val RGBA32F = TextureInternalFormat(GL30.GL_RGBA32F)
+    }
+}
+
+enum class TextureDataType(val glEnum: Int, val bytesPerComponent: Int) {
+    UBYTE(GL11.GL_UNSIGNED_BYTE, 1),
+    BYTE(GL11.GL_BYTE, 1),
+    USHORT(GL11.GL_UNSIGNED_SHORT, 2),
+    SHORT(GL11.GL_SHORT, 2),
+    UINT(GL11.GL_UNSIGNED_INT, 4),
+    INT(GL11.GL_INT, 4),
+    FLOAT(GL11.GL_FLOAT, 4)
+}
+
+@JvmInline value class TextureWrap(val glEnum: Int) {
+    companion object {
+        val REPEAT = TextureWrap(GL11.GL_REPEAT)
+        val MIRRORED_REPEAT = TextureWrap(GL14.GL_MIRRORED_REPEAT)
+        val CLAMP_TO_EDGE = TextureWrap(GL12.GL_CLAMP_TO_EDGE)
+        val CLAMP_TO_BORDER = TextureWrap(GL13.GL_CLAMP_TO_BORDER)
+    }
+}
+
+@JvmInline value class TextureFilter(val glEnum: Int) {
+    companion object {
+        val NEAREST = TextureFilter(GL11.GL_NEAREST)
+        val LINEAR = TextureFilter(GL11.GL_LINEAR)
+        val NEAREST_MIPMAP_NEAREST = TextureFilter(GL11.GL_NEAREST_MIPMAP_NEAREST)
+        val LINEAR_MIPMAP_NEAREST = TextureFilter(GL11.GL_LINEAR_MIPMAP_NEAREST)
+        val NEAREST_MIPMAP_LINEAR = TextureFilter(GL11.GL_NEAREST_MIPMAP_LINEAR)
+        val LINEAR_MIPMAP_LINEAR = TextureFilter(GL11.GL_LINEAR_MIPMAP_LINEAR)
+    }
+}
 
 @JvmInline value class ProgramId(val id: Int)
 
@@ -147,6 +220,87 @@ object TypesafeGL {
 
     fun deleteBuffers(buffer: BufferId) {
         GL15.glDeleteBuffers(buffer.id)
+    }
+
+
+
+    fun genTextures(): TextureId {
+        return TextureId(GL11.glGenTextures())
+    }
+
+    fun activeTexture(unit: Int) {
+        GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit)
+    }
+
+    fun bindTexture(target: TextureTarget, texture: TextureId) {
+        GL11.glBindTexture(target.glEnum, texture.id)
+    }
+
+    fun texParameteri(target: TextureTarget, parameter: Int, value: Int) {
+        GL11.glTexParameteri(target.glEnum, parameter, value)
+    }
+
+    fun pixelStorei(parameter: Int, value: Int) {
+        GL11.glPixelStorei(parameter, value)
+    }
+
+    fun texParameterf(target: TextureTarget, parameter: Int, value: Float) {
+        GL11.glTexParameterf(target.glEnum, parameter, value)
+    }
+
+    fun texImage2D(
+        target: TextureTarget,
+        level: Int,
+        internalFormat: TextureInternalFormat,
+        width: Int,
+        height: Int,
+        format: TextureFormat,
+        dataType: TextureDataType,
+        data: java.nio.ByteBuffer?,
+    ) {
+        GL11.glTexImage2D(
+            target.glEnum,
+            level,
+            internalFormat.glEnum,
+            width,
+            height,
+            0,
+            format.glEnum,
+            dataType.glEnum,
+            data,
+        )
+    }
+
+    fun texSubImage2D(
+        target: TextureTarget,
+        level: Int,
+        xOffset: Int,
+        yOffset: Int,
+        width: Int,
+        height: Int,
+        format: TextureFormat,
+        dataType: TextureDataType,
+        data: java.nio.ByteBuffer,
+    ) {
+        GL11.glTexSubImage2D(
+            target.glEnum,
+            level,
+            xOffset,
+            yOffset,
+            width,
+            height,
+            format.glEnum,
+            dataType.glEnum,
+            data,
+        )
+    }
+
+    fun generateMipmap(target: TextureTarget) {
+        GL30.glGenerateMipmap(target.glEnum)
+    }
+
+    fun deleteTextures(texture: TextureId) {
+        GL11.glDeleteTextures(texture.id)
     }
 
 
