@@ -5,10 +5,10 @@ import java.io.Closeable
 
 class LayerSource : Closeable {
 
-    private val buffers = LinkedHashMap<RenderLayer, Builder>()
+    private val buffers = LinkedHashMap<Layer, Builder>()
 
-    fun getBuffer(layer: RenderLayer): Builder {
-        return buffers.getOrPut(layer) { layer.buffer() }
+    fun getBuffer(layer: Layer): Builder {
+        return buffers.getOrPut(layer) { layer.builder() }
     }
 
     fun endBatch() {
@@ -17,7 +17,7 @@ class LayerSource : Closeable {
         active.forEach { it.flush() }
     }
 
-    fun end(layer: RenderLayer) {
+    fun end(layer: Layer) {
         buffers.remove(layer)
         layer.flush()
     }
