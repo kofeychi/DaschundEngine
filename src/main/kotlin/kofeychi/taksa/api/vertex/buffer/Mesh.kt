@@ -1,72 +1,67 @@
 package kofeychi.taksa.api.vertex.buffer
 
-import kofeychi.taksa.api.BufferTarget
-import kofeychi.taksa.api.BufferUsage
-import kofeychi.taksa.api.DrawMode
-import kofeychi.taksa.api.TypesafeGL
-import kofeychi.taksa.api.vertex.Buffer
-import kofeychi.taksa.api.vertex.DirectBuffer
-import kofeychi.taksa.api.vertex.Format
-import kofeychi.taksa.api.vertex.VertexArray
+import kofeychi.taksa.api.*
+import kofeychi.taksa.api.vertex.*
 import kofeychi.taksa.api.vertex.builder.Builder
 import kofeychi.taksa.api.vertex.builder.Slice
-import java.io.Closeable
-
-interface IMesh : Closeable {
-    fun upload(slice: Slice)
-
-    fun bind()
-    fun unbind()
-
-    fun draw()
-}
 
 class Mesh(
     format: Format,
-    val drawMode: DrawMode,
-    usage: BufferUsage = BufferUsage.STREAM_DRAW
-) : IMesh {
-    private val vao: VertexArray = VertexArray(format)
-    private val vbo: Buffer = DirectBuffer(
-        BufferTarget.ARRAY_BUFFER,
-        usage,
-    )
+    val drawMode: DrawMode = DrawMode.TRIANGLES,
+    usage: BufferUsage = BufferUsage.STATIC_DRAW,
+) : AbstractResource() {
+    private val vao = VertexArray(format)
+    private val vbo = DirectBuffer(BufferTarget.ARRAY_BUFFER, usage)
     private var vertices = 0
 
-    override fun upload(slice: Slice) {
-        vertices = slice.vertexCount
+    val format: Format get() = vao.format
+
+    fun upload(slice: Slice): Mesh {
+        check(!isClosed)
+        slice.requireOpen()
+        require(slice.format == format) { "Slice format does not match mesh format." }
         vao.bind()
-        vbo.bind()
         try {
-            vbo.upload(slice)
-            vao.apply()
+            vbo.bind()
+            try {
+                // DirectBuffer.upload() restores the ARRAY_BUFFER binding when it returns.
+                // Re-bind the VBO before configuring vertex attribute pointers:
+                // glVertexAttribPointer captures the ARRAY_BUFFER binding into the VAO.
+                vbo.upload(slice)
+                vbo.bind()
+                vao.apply()
+            } finally {
+                vbo.unbind()
+            }
         } finally {
             vao.unbind()
-            vbo.unbind()
         }
+        vertices = slice.vertexCount
+        return this
     }
 
-    fun upload(builder: Builder) {
-        builder.build(::upload)
-    }
+    fun upload(builder: Builder): Mesh = builder.build { upload(it) }
 
-    override fun bind() {
+    fun bind() {
+        check(!isClosed)
         vao.bind()
         vbo.bind()
     }
 
-    override fun unbind() {
-        vao.unbind()
+    fun unbind() {
         vbo.unbind()
+        vao.unbind()
     }
 
-    override fun draw() {
-        TypesafeGL.drawArrays(drawMode,0,vertices)
+    fun draw() {
+        check(!isClosed)
+        require(vertices > 0)
+        TypesafeGL.drawArrays(drawMode, 0, vertices)
     }
 
-    override fun close() {
+    override fun onClose() {
+        unbind()
         vao.close()
         vbo.close()
     }
-
 }
