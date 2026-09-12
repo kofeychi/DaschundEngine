@@ -1,55 +1,83 @@
 package kofeychi.taksa.api.layer
 
-import kofeychi.taksa.api.FrameTiming
-import org.joml.Matrix4f
-import org.lwjgl.opengl.GL11
+import kofeychi.taksa.api.vertex.builder.Builder
+import kotlin.math.sqrt
 
-data class IntRect(val x: Int, val y: Int, val width: Int, val height: Int) {
-    fun intersect(other: IntRect): IntRect? {
-        val nx = maxOf(x, other.x)
-        val ny = maxOf(y, other.y)
-        val nr = minOf(x + width, other.x + other.width)
-        val nb = minOf(y + height, other.y + other.height)
-        if (nr <= nx || nb <= ny) return null
-        return IntRect(nx, ny, nr - nx, nb - ny)
-    }
-}
 
-interface RenderTarget : AutoCloseable {
-    val width: Int
-    val height: Int
-    fun bind()
-    fun unbind()
-    fun clear(r: Float = 0f, g: Float = 0f, b: Float = 0f, a: Float = 0f)
-}
-
-data class DrawCtx(
-    val timing: FrameTiming,
-    val viewport: IntRect,
-    val projection: Matrix4f,
-    val view: Matrix4f,
-    val projectionView: Matrix4f,
-    val renderTarget: RenderTarget?,
-    val activeBatchers: List<AutoCloseable>,
-    val clip: IntRect? = null,
+class DrawCtx(
+    val width: Int,
+    val height: Int,
+    val buffers: LayerSource,
+    val layer: Layer, // затычка на время
 ) {
-    val deltaNanos get() = timing.deltaNanos
-    val fps get() = timing.fps
-    val deltaSeconds get() = timing.deltaSeconds
 
-    fun withClip(next: IntRect?): DrawCtx {
-        val combined = if (clip == null) next else if (next == null) clip else clip.intersect(next)
-        return copy(clip = combined)
+    init {
+        require(width > 0) { "width must be positive." }
+        require(height > 0) { "height must be positive." }
     }
 
-    fun applyViewportAndClip() {
-        org.lwjgl.opengl.GL11.glViewport(viewport.x, viewport.y, viewport.width, viewport.height)
-        val effective = clip ?: viewport
-        org.lwjgl.opengl.GL11.glEnable(GL11.GL_SCISSOR_TEST)
-        if (effective.width <= 0 || effective.height <= 0) {
-            org.lwjgl.opengl.GL11.glScissor(0, 0, 0, 0)
-        } else {
-            org.lwjgl.opengl.GL11.glScissor(effective.x, effective.y, effective.width, effective.height)
-        }
+    fun fill(left: Float, top: Float, right: Float, bottom: Float, color: Int) {
+        val b = buffers.getBuffer(layer)
+        quad(b, left, top, right, bottom, color)
+    }
+
+    fun rect(x: Float, y: Float, width: Float, height: Float, color: Int) =
+        fill(x, y, x + width, y + height, color)
+
+    fun line(x1: Float, y1: Float, x2: Float, y2: Float, width: Float, color: Int) {
+        require(width >= 0f) { "Line width must be >= 0." }
+        if (width == 0f) return
+        val dx = x2 - x1
+        val dy = y2 - y1
+        val length = sqrt(dx * dx + dy * dy)
+        if (length == 0f) rect(x1 - width * 0.5f, y1 - width * 0.5f, width, width, color)
+
+        val half = width * 0.5f
+        val px = -dy / length * half
+        val py = dx / length * half
+
+        val b = buffers.getBuffer(layer)
+        vertex(b, x1 + px, y1 + py, 0f, color)
+        vertex(b, x2 + px, y2 + py, 0f, color)
+        vertex(b, x2 - px, y2 - py, 0f, color)
+        vertex(b, x1 - px, y1 - py, 0f, color)
+    }
+
+    fun flush() {
+        buffers.endBatch()
+    }
+
+    private fun quad(
+        b: Builder,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+        color: Int,
+    ) {
+        vertex(b, left, top, 0f, color)
+        vertex(b, right, top, 0f, color)
+        vertex(b, right, bottom, 0f, color)
+        vertex(b, left, top, 0f, color)
+        vertex(b, right, bottom, 0f, color)
+        vertex(b, left, bottom, 0f, color)
+    }
+
+    private fun vertex(
+        b: Builder,
+        x: Float,
+        y: Float,
+        z: Float,
+        color: Int,
+    ) {
+        val nx = (x / width.toFloat()) * 2f - 1f
+        val ny = 1f - (y / height.toFloat()) * 2f
+
+        b.pushFloat3(nx, ny, z)
+        b.putByte((color ushr 16).toByte())
+        b.putByte((color ushr 8).toByte())
+        b.putByte(color.toByte())
+        b.putByte((color ushr 24).toByte())
+        b.push()
     }
 }

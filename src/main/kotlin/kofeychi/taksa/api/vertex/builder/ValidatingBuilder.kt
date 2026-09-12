@@ -1,109 +1,127 @@
 package kofeychi.taksa.api.vertex.builder
 
-import kofeychi.taksa.api.vertex.ElementType
+import org.lwjgl.system.MemoryUtil
 import kofeychi.taksa.api.vertex.Format
 
-/**
- * A strict builder that tracks the exact attribute/component position for the
- * current vertex. Composite pushes write directly and are validated exactly once.
- */
 class ValidatingBuilder(
-    initialCapacity: Int = 4096,
+    initialCapacity: Int,
     format: Format,
 ) : AbstractVertexBuilder(initialCapacity, format) {
-    private var attributeIndex = 0
-    private var componentInAttribute = 0
 
-    private fun validateComponents(
-        components: Int,
-        bytesPerComponent: Int,
-        expectsFloat: Boolean,
-    ) {
-        require(components in 1..4)
-        check(attributeIndex < format.attributes.size) {
-            "Too many components pushed for current vertex: attributeIndex=$attributeIndex, " +
-                "attributes=${format.attributes.joinToString { it.name + "[" + it.count + "]" }}. " +
-                "Do not push after completing all attributes; call push() to finish the vertex."
+    init {
+        println("i hope this is not a prod env!")
+    }
+
+    private val expectedElementsPerVertex: Int = format.elements.sumOf { it.count }
+    private var currentVertexElementCount: Int = 0
+    private var currentElementIndex: Int = 0
+    private var currentElementComponentCount: Int = 0
+
+    override fun clear() {
+        super.clear()
+        currentVertexElementCount = 0
+        currentElementIndex = 0
+        currentElementComponentCount = 0
+    }
+
+    private fun validatePush(componentsPushed: Int) {
+        if (currentElementIndex >= format.elements.size) {
+            throw IllegalStateException("Attempting to push data beyond the defined format structure for a single vertex. " +
+                    "Expected end of vertex, but received more data.")
         }
 
-        val attribute = format.attributes[attributeIndex]
-        check(componentInAttribute + components <= attribute.count) {
-            "Attribute '${attribute.name}' expects ${attribute.count} components; " +
-                "received ${componentInAttribute + components}."
+        val currentElement = format.elements[currentElementIndex]
+
+        if (currentElementComponentCount + componentsPushed > currentElement.count) {
+            val expectedLeft = currentElement.count - currentElementComponentCount
+            throw IllegalStateException(
+                """
+                    Format mismatch for element '${currentElement.name}': 
+                    Attempted to push $componentsPushed component(s), but only $expectedLeft more are expected
+                    for this element type (Total expected for '${currentElement.name}': ${currentElement.count}).
+                """.trimIndent()
+            )
         }
-        check(attribute.type.size == bytesPerComponent) {
-            "Attribute '${attribute.name}' uses ${attribute.type}, " +
-                "but the current operation writes $bytesPerComponent-byte components."
+
+        currentElementComponentCount += componentsPushed
+        currentVertexElementCount += componentsPushed
+
+        if (currentElementComponentCount == currentElement.count) {
+            currentElementIndex++
+            currentElementComponentCount = 0
         }
-        check((attribute.type == ElementType.FLOAT) == expectsFloat) {
-            "Attribute '${attribute.name}' is ${attribute.type}; use a " +
-                "${if (expectsFloat) "floating-point" else "integer"} push operation."
-        }
-
-        componentInAttribute += components
-        if (componentInAttribute == attribute.count) {
-            attributeIndex++
-            componentInAttribute = 0
-        }
-    }
-
-    override fun resetValidation() {
-        attributeIndex = 0
-        componentInAttribute = 0
-    }
-
-    override fun beginVertex() {
-        check(attributeIndex == 0 && componentInAttribute == 0) {
-            "Previous vertex is incomplete; call push() after supplying all attributes."
-        }
-    }
-
-    override fun pushFloat(value: Float) {
-        validateComponents(1, 4, true)
-        writeFloat(value)
-    }
-
-    override fun pushInt(value: Int) {
-        validateComponents(1, 4, false)
-        writeInt(value)
-    }
-
-    override fun putByte(value: Byte) {
-        validateComponents(1, 1, false)
-        writeByte(value)
-    }
-
-    override fun pushFloat2(x: Float, y: Float) {
-        validateComponents(2, 4, true)
-        writeFloat2(x, y)
-    }
-
-    override fun pushFloat3(x: Float, y: Float, z: Float) {
-        validateComponents(3, 4, true)
-        writeFloat3(x, y, z)
-    }
-
-    override fun pushFloat4(x: Float, y: Float, z: Float, w: Float) {
-        validateComponents(4, 4, true)
-        writeFloat4(x, y, z, w)
     }
 
     override fun push() {
-        check(attributeIndex == format.attributes.size && componentInAttribute == 0) {
-            "Vertex is incomplete: stopped at attributeIndex=$attributeIndex, " +
-                "componentInAttribute=$componentInAttribute of ${format.attributes.size} attributes."
+        vertexCount++
+
+        if (vertexCount.toLong() * format.stride != pointer.toLong()) {
+            throw RuntimeException("Buffer contains invalid data size. Expected: ${vertexCount * format.stride} bytes, actual: $pointer bytes.")
         }
-        check(pointer == (count + 1) * format.stride) {
-            "Vertex byte count mismatch: pointer=$pointer, expected ${(count + 1) * format.stride}."
+
+        if (currentVertexElementCount != expectedElementsPerVertex || currentElementIndex != format.elements.size) {
+            val missing = expectedElementsPerVertex - currentVertexElementCount
+            val currentElName =
+                if (currentElementIndex < format.elements.size) format.elements[currentElementIndex].name else "None"
+            throw IllegalStateException(
+                """
+                Vertex pushed prematurely. Missing $missing component(s), but stopped at $currentElName
+            """.trimIndent()
+            )
         }
-        super.push()
-        resetValidation()
+
+        currentVertexElementCount = 0
+        currentElementIndex = 0
+        currentElementComponentCount = 0
     }
 
-    override fun build(): Slice {
-        check(attributeIndex == 0 && componentInAttribute == 0) {
-            "Cannot build with an incomplete current vertex."
-        }
-        return super.build()
+    override fun checkBuildReady() {
+        super.checkBuildReady()
+        check(currentVertexElementCount == 0) { "Cannot build: A vertex is currently being constructed but hasn't been push()ed." }
+    }
+
+    override fun pushFloat(value: Float) {
+        validatePush(1)
+        ensureCapacity(Float.SIZE_BYTES)
+        MemoryUtil.memPutFloat(address + pointer, value)
+        pointer += Float.SIZE_BYTES
+    }
+
+    override fun pushInt(value: Int) {
+        validatePush(1)
+        ensureCapacity(Int.SIZE_BYTES)
+        MemoryUtil.memPutInt(address + pointer, value)
+        pointer += Int.SIZE_BYTES
+    }
+
+    override fun putByte(value: Byte) {
+        validatePush(1)
+        ensureCapacity(Byte.SIZE_BYTES)
+        MemoryUtil.memPutByte(address + pointer, value)
+        pointer += Byte.SIZE_BYTES
+    }
+
+    override fun pushFloat3(x: Float, y: Float, z: Float) {
+        validatePush(3)
+        ensureCapacity(Float.SIZE_BYTES * 3)
+        MemoryUtil.memPutFloat(address + pointer, x)
+        pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, y)
+        pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, z)
+        pointer += Float.SIZE_BYTES
+    }
+
+    override fun pushFloat4(x: Float, y: Float, z: Float, w: Float) {
+        validatePush(4)
+        ensureCapacity(Float.SIZE_BYTES * 4)
+        MemoryUtil.memPutFloat(address + pointer, x)
+        pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, y)
+        pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, z)
+        pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, w)
+        pointer += Float.SIZE_BYTES
     }
 }

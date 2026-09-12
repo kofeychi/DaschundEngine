@@ -1,44 +1,33 @@
 package kofeychi.taksa.api.shader
 
-import kofeychi.taksa.api.AbstractResource
-import kofeychi.taksa.api.ShaderId
 import kofeychi.taksa.api.ShaderType
 import kofeychi.taksa.api.TypesafeGL
+import kofeychi.taksa.api.VertexArrayId
+import org.lwjgl.opengl.GL11
+import org.lwjgl.opengl.GL20
+import java.io.Closeable
 
 class Shader(
     val type: ShaderType,
-    val source: ShaderSource,
-) : AbstractResource() {
-    val id: ShaderId
+    source: ShaderSource,
+) : Closeable {
+    val id = TypesafeGL.createShader(type)
 
     init {
-        val created = TypesafeGL.createShader(type)
-        check(created.id != 0) { "Could not create shader of type $type." }
-        id = created
-        try {
-            TypesafeGL.shaderSource(id, source.source)
-            TypesafeGL.compileShader(id)
-            if (!TypesafeGL.getShaderCompileStatus(id)) {
-                throw ShaderException.compiler(
-                    typeName(type),
-                    source.source,
-                    TypesafeGL.getShaderInfoLog(id)
-                )
-            }
-        } catch (t: Throwable) {
-            TypesafeGL.deleteShader(id)
-            throw t
+        if(id.id == 0) throw ShaderException("Could not create shader of type $type")
+
+        TypesafeGL.shaderSource(id,source.source)
+        TypesafeGL.compileShader(id)
+
+        if(!TypesafeGL.getShaderCompileStatus(id)) {
+            val info = TypesafeGL.getShaderInfoLog(id)
+            close()
+            throw ShaderException("Failed to compile ${type} shader.\nInfo Log:\n$info")
         }
     }
 
-    override fun onClose() {
+    override fun close() {
+        if(id.id == 0) return
         TypesafeGL.deleteShader(id)
-    }
-
-    private fun typeName(type: ShaderType) = when (type) {
-        ShaderType.VERTEX -> "vertex"
-        ShaderType.FRAGMENT -> "fragment"
-        ShaderType.GEOMETRY -> "geometry"
-        else -> "shader(${type.glEnum})"
     }
 }

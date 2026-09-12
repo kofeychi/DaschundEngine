@@ -1,96 +1,81 @@
 package kofeychi.taksa.api.shader
 
-import kofeychi.taksa.api.AbstractResource
 import kofeychi.taksa.api.ProgramId
 import kofeychi.taksa.api.ShaderType
 import kofeychi.taksa.api.TypesafeGL
 import kofeychi.taksa.api.shader.uniform.Uniform
-import java.util.concurrent.ConcurrentHashMap
+import java.io.Closeable
 
-class Program : AbstractResource() {
-    val id: ProgramId
-    private val attached = LinkedHashMap<ShaderType, Shader>()
-    private val uniforms = ConcurrentHashMap<String, Uniform>()
-
-    init {
-        id = TypesafeGL.createProgram()
-        check(id.id != 0) { "Could not create shader program." }
-    }
+class Program : Closeable {
+    val id = TypesafeGL.createProgram()
 
     companion object {
-        inline fun create(action: Program.() -> Unit): Program =
-            Program().apply(action)
-
-        fun linked(vararg shaders: Shader): Program =
-            Program().apply {
-                shaders.forEach(::attach)
-                link()
-            }
-    }
-
-    fun attach(shader: Shader): Program {
-        check(!isClosed)
-        check(attached[shader.type] == null) { "A ${shader.type.glEnum} shader is already attached." }
-        check(!shader.isClosed)
-        TypesafeGL.attachShader(id, shader.id)
-        attached[shader.type] = shader
-        return this
-    }
-
-    fun detach(shader: Shader): Program {
-        if (attached.remove(shader.type) != null) {
-            TypesafeGL.detachShader(id, shader.id)
+        fun create(action: Program.() -> Unit): Program {
+            val program = Program()
+            action(program)
+            return program
         }
-        return this
     }
 
-    fun link(): Program {
-        check(!isClosed)
+    private val shaders = mutableMapOf<ShaderType, Shader>()
+    private val uniforms = mutableMapOf<String, Uniform>()
+
+    init {
+        if(id.id == 0) throw ShaderException("Could not create program")
+    }
+
+    fun attach(shader: Shader) {
+        if(shaders.containsKey(shader.type)) throw ShaderException("Shader '${shader.type}' already exists")
+        TypesafeGL.attachShader(id,shader.id)
+        shaders[shader.type] = shader
+    }
+
+    fun link() {
         TypesafeGL.linkProgram(id)
-        if (!TypesafeGL.getProgramLinkStatus(id)) {
-            throw ShaderException.linker(TypesafeGL.getProgramInfoLog(id))
+
+        if(!TypesafeGL.getProgramLinkStatus(id)) {
+            val info = TypesafeGL.getProgramInfoLog(id)
+            close()
+            throw ShaderException("Failed to link shader program.\nInfo Log:\n$info")
         }
-        clearUniformCache()
-        return this
     }
 
     fun deleteShaders() {
-        val shaders = attached.values.toList()
-        attached.clear()
-        shaders.forEach { shader ->
-            TypesafeGL.detachShader(id, shader.id)
-            shader.close()
+        shaders.values.forEach {
+            TypesafeGL.detachShader(id,it.id)
+            it.close()
         }
+        shaders.clear()
     }
 
-    fun bind(): Program {
-        check(!isClosed)
-        TypesafeGL.useProgram(id)
-        return this
-    }
-
-    fun unbind() {
-        if (!isClosed && TypesafeGL.state().program == id.id) TypesafeGL.useProgram(ProgramId(0))
-    }
 
     fun uniform(name: String): Uniform {
-        check(!isClosed)
-        require(name.isNotBlank())
+        require(name.isNotBlank()) { "Uniform name must not be blank." }
         return uniforms.getOrPut(name) { Uniform(this, name) }
     }
 
-    fun hasUniform(name: String): Boolean = uniform(name).location >= 0
+    fun useUniform(name: String,action: Uniform.() -> Unit) {
+        uniform(name).action()
+    }
+
+    fun hasUniform(name: String): Boolean = TypesafeGL.getUniformLocation(id, name) >= 0
 
     fun clearUniformCache() {
-        uniforms.values.forEach(Uniform::invalidate)
         uniforms.clear()
     }
 
-    override fun onClose() {
-        if (TypesafeGL.state().program == id.id) TypesafeGL.useProgram(ProgramId(0))
-        attached.values.forEach { TypesafeGL.detachShader(id, it.id) }
-        attached.clear()
+    fun bind() {
+        TypesafeGL.useProgram(id)
+    }
+
+    fun unbind() {
+        TypesafeGL.useProgram(ProgramId(0))
+    }
+
+    override fun close() {
         uniforms.clear()
+        unbind()
+        if (id.id == 0) return
         TypesafeGL.deleteProgram(id)
     }
 }

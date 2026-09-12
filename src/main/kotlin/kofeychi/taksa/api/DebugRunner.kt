@@ -14,9 +14,7 @@ object DebugRunner {
         Configuration.DEBUG_STACK.set(true)
         Configuration.DEBUG.set(true)
         init()
-        GLUtil.setupDebugMessageCallback()?.run{
-            action()
-            close()
-        } ?: action()
+        GLUtil.setupDebugMessageCallback()?.close()
+        action()
     }
 }

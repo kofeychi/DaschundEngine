@@ -1,21 +1,28 @@
 package kofeychi.taksa.api.vertex
 
-import kofeychi.taksa.api.*
+import kofeychi.taksa.api.TypesafeGL
+import kofeychi.taksa.api.VertexArrayId
+import java.io.Closeable
 
 class VertexArray(
     val format: Format,
-) : AbstractResource() {
-    val id = TypesafeGL.genVertexArrays()
+) : Closeable {
+    private val id: VertexArrayId = TypesafeGL.genVertexArrays()
 
-    fun bind() { check(!isClosed); TypesafeGL.bindVertexArray(id) }
-    fun unbind() { TypesafeGL.bindVertexArray(VertexArrayId(0)) }
+    fun bind() {
+        TypesafeGL.bindVertexArray(id)
+    }
+
+    fun unbind() {
+        TypesafeGL.bindVertexArray(VertexArrayId(0))
+    }
 
     fun apply() {
-        check(!isClosed)
         format.apply()
     }
 
-    override fun onClose() {
+    override fun close() {
         TypesafeGL.deleteVertexArrays(id)
     }
+
 }

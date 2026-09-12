@@ -1,7 +1,15 @@
 package kofeychi.taksa.api.texture
 
-import kofeychi.taksa.api.*
+import kofeychi.taksa.api.TextureFilter
+import kofeychi.taksa.api.TextureFormat
+import kofeychi.taksa.api.TextureId
+import kofeychi.taksa.api.TextureInternalFormat
+import kofeychi.taksa.api.TextureTarget
+import kofeychi.taksa.api.TextureWrap
+import kofeychi.taksa.api.TextureDataType
+import kofeychi.taksa.api.TypesafeGL
 import org.lwjgl.opengl.GL11
+import java.io.Closeable
 
 data class TextureConfiguration(
     var target: TextureTarget = TextureTarget.TEXTURE_2D,
@@ -16,12 +24,13 @@ data class TextureConfiguration(
     var unpackAlignment: Int = 1,
 )
 
-class Texture private constructor(
+class Texture(
     val configuration: TextureConfiguration = TextureConfiguration(),
     contents: TextureContents? = null,
-    private var ownsContents: Boolean = false,
-) : AbstractResource() {
+) : Closeable {
+
     val id: TextureId = TypesafeGL.genTextures()
+
     var contents: TextureContents? = contents
         private set
 
@@ -29,120 +38,164 @@ class Texture private constructor(
     private var allocatedHeight = 0
     private var allocatedFormat: TextureFormat? = null
     private var allocatedType: TextureDataType? = null
-    private var allocatedInternal: TextureInternalFormat? = null
+    private var allocatedInternalFormat: TextureInternalFormat? = null
+    private var closed = false
 
     init {
-        check(id.id != 0) { "Could not create texture." }
+        check(id.id != 0) { "Could not create texture" }
         contents?.let(::validateContents)
     }
 
     companion object {
-        fun create(contents: TextureContents? = null, action: TextureConfiguration.() -> Unit = {}) =
-            Texture(TextureConfiguration().apply(action), contents, ownsContents = false)
+        fun create(
+            contents: TextureContents? = null,
+            action: TextureConfiguration.() -> Unit = {}
+        ): Texture {
+            val configuration = TextureConfiguration().apply(action)
+            return Texture(configuration, contents)
+        }
 
-        fun rgba(width: Int, height: Int, action: TextureConfiguration.() -> Unit = {}) =
-            Texture(TextureConfiguration().apply(action), TextureContents.rgba(width, height), ownsContents = true)
+        fun rgba(width: Int, height: Int, action: TextureConfiguration.() -> Unit = {}): Texture {
+            val contents = TextureContents.rgba(width, height)
+            return create(contents, action)
+        }
     }
 
-    fun contents(value: TextureContents): Texture {
-        check(!isClosed)
-        validateContents(value)
-        if (ownsContents) contents?.close()
-        contents = value
-        ownsContents = false
-        return this
-    }
-
-    fun adoptContents(value: TextureContents): Texture {
-        check(!isClosed)
-        validateContents(value)
-        if (ownsContents) contents?.close()
-        contents = value
-        ownsContents = true
+    fun contents(contents: TextureContents): Texture {
+        validateContents(contents)
+        this.contents = contents
         return this
     }
 
     fun edit(action: TextureContents.() -> Unit): Texture {
-        check(!isClosed)
-        (contents ?: error("Texture has no contents.")).apply(action)
+        val current = contents ?: error("Texture has no contents.")
+        current.action()
         return this
     }
 
     fun upload(): Texture {
-        check(!isClosed)
-        val image = contents ?: error("Texture has no contents.")
+        check(!closed) { "Texture is closed." }
+        val image = contents ?: error("Texture has no contents to upload.")
         validateContents(image)
+
         bind()
+
         try {
             configure()
-            image.data.position(0).limit(image.size)
-            val changed = allocatedWidth != image.width ||
+            image.data.position(0)
+            image.data.limit(image.size)
+
+            val allocationChanged =
+                allocatedWidth != image.width ||
                 allocatedHeight != image.height ||
                 allocatedFormat != image.format ||
                 allocatedType != image.dataType ||
-                allocatedInternal != configuration.internalFormat
-            if (changed) {
-                TypesafeGL.texImage2D(configuration.target, 0, configuration.internalFormat,
-                    image.width, image.height, configuration.format, configuration.dataType, image.data)
+                allocatedInternalFormat != configuration.internalFormat
+
+            if (allocationChanged) {
+                TypesafeGL.texImage2D(
+                    configuration.target,
+                    0,
+                    configuration.internalFormat,
+                    image.width,
+                    image.height,
+                    configuration.format,
+                    configuration.dataType,
+                    image.data
+                )
+
                 allocatedWidth = image.width
                 allocatedHeight = image.height
                 allocatedFormat = image.format
                 allocatedType = image.dataType
-                allocatedInternal = configuration.internalFormat
+                allocatedInternalFormat = configuration.internalFormat
             } else {
-                TypesafeGL.texSubImage2D(configuration.target, 0, 0, 0, image.width, image.height,
-                    configuration.format, configuration.dataType, image.data)
+                TypesafeGL.texSubImage2D(
+                    configuration.target,
+                    0,
+                    0,
+                    0,
+                    image.width,
+                    image.height,
+                    configuration.format,
+                    configuration.dataType,
+                    image.data
+                )
             }
-            if (configuration.generateMipmaps) TypesafeGL.generateMipmap(configuration.target)
+
+            if (configuration.generateMipmaps) {
+                TypesafeGL.generateMipmap(configuration.target)
+            }
         } finally {
             image.data.clear()
             unbind()
         }
+
         return this
     }
 
-    fun upload(value: TextureContents): Texture {
-        contents(value)
+    fun upload(contents: TextureContents): Texture {
+        this.contents = contents
         return upload()
     }
 
-    fun bind(unit: Int = TypesafeGL.state().activeTextureUnit): Texture {
-        check(!isClosed)
-        require(unit >= 0)
+    fun bind(unit: Int = 0): Texture {
+        check(!closed) { "Texture is closed." }
+        require(unit >= 0) { "Texture unit must be >= 0." }
         TypesafeGL.activeTexture(unit)
-        TypesafeGL.bindTexture(configuration.target, id, unit)
+        TypesafeGL.bindTexture(configuration.target, id)
         return this
     }
 
-    fun unbind(unit: Int = TypesafeGL.state().activeTextureUnit): Texture {
-        require(unit >= 0)
+    fun unbind(unit: Int = 0): Texture {
+        require(unit >= 0) { "Texture unit must be >= 0." }
         TypesafeGL.activeTexture(unit)
-        TypesafeGL.bindTexture(configuration.target, TextureId(0), unit)
+        TypesafeGL.bindTexture(configuration.target, TextureId(0))
         return this
     }
 
     private fun configure() {
-        TypesafeGL.texParameteri(configuration.target, GL11.GL_TEXTURE_MIN_FILTER, configuration.minFilter.glEnum)
-        TypesafeGL.texParameteri(configuration.target, GL11.GL_TEXTURE_MAG_FILTER, configuration.magFilter.glEnum)
-        TypesafeGL.texParameteri(configuration.target, GL11.GL_TEXTURE_WRAP_S, configuration.wrapS.glEnum)
-        TypesafeGL.texParameteri(configuration.target, GL11.GL_TEXTURE_WRAP_T, configuration.wrapT.glEnum)
-        require(configuration.unpackAlignment in setOf(1, 2, 4, 8))
+        TypesafeGL.texParameteri(
+            configuration.target,
+            GL11.GL_TEXTURE_MIN_FILTER,
+            configuration.minFilter.glEnum
+        )
+        TypesafeGL.texParameteri(
+            configuration.target,
+            GL11.GL_TEXTURE_MAG_FILTER,
+            configuration.magFilter.glEnum
+        )
+        TypesafeGL.texParameteri(
+            configuration.target,
+            GL11.GL_TEXTURE_WRAP_S,
+            configuration.wrapS.glEnum
+        )
+        TypesafeGL.texParameteri(
+            configuration.target,
+            GL11.GL_TEXTURE_WRAP_T,
+            configuration.wrapT.glEnum
+        )
         TypesafeGL.pixelStorei(GL11.GL_UNPACK_ALIGNMENT, configuration.unpackAlignment)
     }
 
-    private fun validateContents(c: TextureContents) {
-        require(c.width > 0 && c.height > 0)
-        require(c.format == configuration.format) { "Expected ${configuration.format}, got ${c.format}." }
-        require(c.dataType == configuration.dataType) { "Expected ${configuration.dataType}, got ${c.dataType}." }
+    private fun validateContents(contents: TextureContents) {
+        require(contents.width > 0 && contents.height > 0) {
+            "Texture contents must have a positive size."
+        }
+        require(contents.format == configuration.format) {
+            "Texture format mismatch: configuration expects ${configuration.format}, " +
+                    "but contents use ${contents.format}."
+        }
+        require(contents.dataType == configuration.dataType) {
+            "Texture data type mismatch: configuration expects ${configuration.dataType}, " +
+                    "but contents use ${contents.dataType}."
+        }
     }
 
-    override fun onClose() {
-        contents?.let { if (ownsContents) it.close() }
-        contents = null
-        ownsContents = false
-        val unit = TypesafeGL.state().activeTextureUnit
-        TypesafeGL.activeTexture(unit)
-        TypesafeGL.bindTexture(configuration.target, TextureId(0), unit)
+    override fun close() {
+        if (closed) return
+        closed = true
+        unbind()
         TypesafeGL.deleteTextures(id)
     }
 }

@@ -1,29 +1,28 @@
 package kofeychi.taksa.api.layer
 
-interface LayerSource : AutoCloseable {
-    fun snapshot(): List<Layer>
-    override fun close() = Unit
-}
+import kofeychi.taksa.api.vertex.builder.Builder
+import java.io.Closeable
 
-class MutableLayerSource : LayerSource {
-    private val roots = ArrayList<Layer>()
-    private val lock = Any()
+class LayerSource : Closeable {
 
-    fun add(layer: Layer): MutableLayerSource {
-        synchronized(lock) {
-            if (!roots.contains(layer)) roots += layer
-        }
-        return this
+    private val buffers = LinkedHashMap<Layer, Builder>()
+
+    fun getBuffer(layer: Layer): Builder {
+        return buffers.getOrPut(layer) { layer.builder() }
     }
 
-    fun remove(layer: Layer): Boolean = synchronized(lock) { roots.remove(layer) }
+    fun endBatch() {
+        val active = buffers.keys.toList()
+        buffers.clear()
+        active.forEach { it.flush() }
+    }
 
-    override fun snapshot(): List<Layer> = synchronized(lock) {
-        roots.sortedWith(compareBy<Layer> { it.zIndex }.thenBy { System.identityHashCode(it) })
+    fun end(layer: Layer) {
+        buffers.remove(layer)
+        layer.flush()
     }
 
     override fun close() {
-        val snapshot = synchronized(lock) { roots.toList().also { roots.clear() } }
-        snapshot.forEach(Layer::close)
+        buffers.clear()
     }
 }
