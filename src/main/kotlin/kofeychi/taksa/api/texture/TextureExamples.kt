@@ -19,5 +19,8 @@ package kofeychi.taksa.api.texture
  *
  * // Or replace the entire image without replacing the Texture:
  * texture.upload(otherContents)
+ *
+ * // Offscreen render target (see api.layer.RenderTarget):
+ * val colorAttachment = Texture.empty(1920, 1080) { internalFormat = TextureInternalFormat.RGBA8 }
  */
 object TextureExamples

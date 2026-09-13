@@ -2,13 +2,13 @@ package kofeychi.taksa.api
 
 import kofeychi.taksa.api.shader.uniform.Uniform
 import org.lwjgl.opengl.GL11
-import org.lwjgl.opengl.GL15
-import org.lwjgl.opengl.GL20
-import org.lwjgl.opengl.GL30
 import org.lwjgl.opengl.GL12
 import org.lwjgl.opengl.GL13
 import org.lwjgl.opengl.GL14
-
+import org.lwjgl.opengl.GL15
+import org.lwjgl.opengl.GL20
+import org.lwjgl.opengl.GL30
+import org.lwjgl.system.MemoryStack
 
 @JvmInline value class TextureId(val id: Int)
 
@@ -28,6 +28,7 @@ import org.lwjgl.opengl.GL14
         val RG_INTEGER = TextureFormat(GL30.GL_RG_INTEGER)
         val RGB_INTEGER = TextureFormat(GL30.GL_RGB_INTEGER)
         val RGBA_INTEGER = TextureFormat(GL30.GL_RGBA_INTEGER)
+        val DEPTH_COMPONENT = TextureFormat(GL11.GL_DEPTH_COMPONENT)
     }
 }
 
@@ -46,6 +47,9 @@ import org.lwjgl.opengl.GL14
         val RG32F = TextureInternalFormat(GL30.GL_RG32F)
         val RGB32F = TextureInternalFormat(GL30.GL_RGB32F)
         val RGBA32F = TextureInternalFormat(GL30.GL_RGBA32F)
+
+        val DEPTH24_STENCIL8 = TextureInternalFormat(GL30.GL_DEPTH24_STENCIL8)
+        val DEPTH_COMPONENT24 = TextureInternalFormat(GL14.GL_DEPTH_COMPONENT24)
     }
 }
 
@@ -80,12 +84,11 @@ enum class TextureDataType(val glEnum: Int, val bytesPerComponent: Int) {
 }
 
 @JvmInline value class ProgramId(val id: Int)
-
 @JvmInline value class ShaderId(val id: Int)
-
 @JvmInline value class BufferId(val id: Int)
-
 @JvmInline value class VertexArrayId(val id: Int)
+@JvmInline value class FramebufferId(val id: Int)
+@JvmInline value class RenderbufferId(val id: Int)
 
 @JvmInline value class ShaderType(val glEnum: Int) {
     companion object {
@@ -121,83 +124,99 @@ enum class TextureDataType(val glEnum: Int, val bytesPerComponent: Int) {
 
 @JvmInline value class DrawMode(val glEnum: Int) {
     companion object {
-        val TRIANGLES = DrawMode(GL15.GL_TRIANGLES)
-        val QUADS = DrawMode(GL15.GL_QUADS)
+        val POINTS = DrawMode(GL11.GL_POINTS)
+        val LINES = DrawMode(GL11.GL_LINES)
+        val LINE_STRIP = DrawMode(GL11.GL_LINE_STRIP)
+        val TRIANGLES = DrawMode(GL11.GL_TRIANGLES)
+        val TRIANGLE_STRIP = DrawMode(GL11.GL_TRIANGLE_STRIP)
+        val TRIANGLE_FAN = DrawMode(GL11.GL_TRIANGLE_FAN)
     }
 }
 
+@JvmInline value class BlendMode private constructor(val src: Int, val dst: Int) {
+    companion object {
+        val NONE = BlendMode(-1, -1)
+        val ALPHA = BlendMode(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA)
+        val ADDITIVE = BlendMode(GL11.GL_SRC_ALPHA, GL11.GL_ONE)
+        val PREMULTIPLIED = BlendMode(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA)
+    }
+
+    val enabled: Boolean get() = this != NONE
+}
+
+/**
+ * Thin, allocation-free wrapper over raw LWJGL GL calls.
+ *
+ * Two responsibilities live here:
+ *  1. Typesafety: every GL enum/handle is a distinct inline value class so you can't
+ *     accidentally pass a [BufferId] where a [TextureId] is expected.
+ *  2. Redundant state elimination: binds/enables that would be no-ops against the
+ *     currently-tracked GL state are skipped entirely. This is a huge win for layered
+ *     rendering where many draw calls reuse the same program/texture/vao back to back.
+ *
+ * The cache is invalidated automatically whenever a handle is deleted so stale ids can
+ * never be "seen" as still-bound.
+ */
 object TypesafeGL {
 
-    fun createShader(type: ShaderType): ShaderId {
-        return ShaderId(GL20.glCreateShader(type.glEnum))
+    // ---- tracked state -----------------------------------------------------
+    private var boundProgram = ProgramId(0)
+    private var boundVertexArray = VertexArrayId(0)
+    private val boundBuffers = HashMap<Int, BufferId>()
+    private var activeUnit = 0
+    private val boundTextures = HashMap<Int, TextureId>() // key = texture unit
+    private var boundFramebuffer = FramebufferId(0)
+    private var blendMode = BlendMode.NONE
+    private var scissorEnabled = false
+    private var depthTestEnabled = false
+
+    fun resetTrackedState() {
+        boundProgram = ProgramId(0)
+        boundVertexArray = VertexArrayId(0)
+        boundBuffers.clear()
+        boundTextures.clear()
+        boundFramebuffer = FramebufferId(0)
+        blendMode = BlendMode.NONE
+        scissorEnabled = false
+        depthTestEnabled = false
+        activeUnit = 0
     }
 
-    fun shaderSource(shader: ShaderId, source: String) {
-        GL20.glShaderSource(shader.id, source)
-    }
+    // ---- shaders -------------------------------------------------------------
+    fun createShader(type: ShaderType): ShaderId = ShaderId(GL20.glCreateShader(type.glEnum))
+    fun shaderSource(shader: ShaderId, source: String) = GL20.glShaderSource(shader.id, source)
+    fun compileShader(shader: ShaderId) = GL20.glCompileShader(shader.id)
+    fun getShaderCompileStatus(shader: ShaderId): Boolean =
+        GL20.glGetShaderi(shader.id, GL20.GL_COMPILE_STATUS) == GL11.GL_TRUE
+    fun getShaderInfoLog(shader: ShaderId): String = GL20.glGetShaderInfoLog(shader.id)
+    fun deleteShader(shader: ShaderId) = GL20.glDeleteShader(shader.id)
+    fun detachShader(program: ProgramId, shader: ShaderId) = GL20.glDetachShader(program.id, shader.id)
 
-    fun compileShader(shader: ShaderId) {
-        GL20.glCompileShader(shader.id)
-    }
-
-    fun getShaderCompileStatus(shader: ShaderId): Boolean {
-        return GL20.glGetShaderi(shader.id, GL20.GL_COMPILE_STATUS) == GL11.GL_TRUE
-    }
-
-    fun getShaderInfoLog(shader: ShaderId): String {
-        return GL20.glGetShaderInfoLog(shader.id)
-    }
-
-    fun deleteShader(shader: ShaderId) {
-        GL20.glDeleteShader(shader.id)
-    }
-
-    fun detachShader(program: ProgramId, shader: ShaderId) {
-        GL20.glDetachShader(program.id,shader.id)
-    }
-
-
-
-    fun createProgram(): ProgramId {
-        return ProgramId(GL20.glCreateProgram())
-    }
-
-    fun attachShader(program: ProgramId, shader: ShaderId) {
-        GL20.glAttachShader(program.id, shader.id)
-    }
-
-    fun linkProgram(program: ProgramId) {
-        GL20.glLinkProgram(program.id)
-    }
-
-    fun getProgramLinkStatus(program: ProgramId): Boolean {
-        return GL20.glGetProgrami(program.id, GL20.GL_LINK_STATUS) == GL11.GL_TRUE
-    }
-
-    fun getProgramInfoLog(program: ProgramId): String {
-        return GL20.glGetProgramInfoLog(program.id)
-    }
+    // ---- programs --------------------------------------------------------------
+    fun createProgram(): ProgramId = ProgramId(GL20.glCreateProgram())
+    fun attachShader(program: ProgramId, shader: ShaderId) = GL20.glAttachShader(program.id, shader.id)
+    fun linkProgram(program: ProgramId) = GL20.glLinkProgram(program.id)
+    fun getProgramLinkStatus(program: ProgramId): Boolean =
+        GL20.glGetProgrami(program.id, GL20.GL_LINK_STATUS) == GL11.GL_TRUE
+    fun getProgramInfoLog(program: ProgramId): String = GL20.glGetProgramInfoLog(program.id)
 
     fun useProgram(program: ProgramId) {
+        if (boundProgram == program) return
         GL20.glUseProgram(program.id)
+        boundProgram = program
     }
 
     fun deleteProgram(program: ProgramId) {
+        if (boundProgram == program) boundProgram = ProgramId(0)
         GL20.glDeleteProgram(program.id)
     }
 
-
-
-    fun getUniformLocation(program: ProgramId, name: String): Int {
-        return GL20.glGetUniformLocation(program.id, name)
-    }
-
-    fun getActiveUniformCount(program: ProgramId): Int {
-        return GL20.glGetProgrami(program.id, GL20.GL_ACTIVE_UNIFORMS)
-    }
+    // ---- uniforms ----------------------------------------------------------------
+    fun getUniformLocation(program: ProgramId, name: String): Int = GL20.glGetUniformLocation(program.id, name)
+    fun getActiveUniformCount(program: ProgramId): Int = GL20.glGetProgrami(program.id, GL20.GL_ACTIVE_UNIFORMS)
 
     fun getActiveUniform(program: ProgramId, index: Int): ActiveUniform {
-        org.lwjgl.system.MemoryStack.stackPush().use { stack ->
+        MemoryStack.stackPush().use { stack ->
             val size = stack.mallocInt(1)
             val type = stack.mallocInt(1)
             val name = GL20.glGetActiveUniform(program.id, index, size, type)
@@ -210,9 +229,8 @@ object TypesafeGL {
         return Uniform.Type.from(uniform?.type ?: -1)
     }
 
-    fun getUniformArrayLength(program: ProgramId, name: String): Int {
-        return findActiveUniform(program, name)?.size ?: 0
-    }
+    fun getUniformArrayLength(program: ProgramId, name: String): Int =
+        findActiveUniform(program, name)?.size ?: 0
 
     private fun findActiveUniform(program: ProgramId, requestedName: String): ActiveUniform? {
         repeat(getActiveUniformCount(program)) { index ->
@@ -224,160 +242,175 @@ object TypesafeGL {
         return null
     }
 
-    fun uniform1f(program: ProgramId, location: Int, value: Float) { GL20.glUniform1f(location, value) }
-    fun uniform2f(program: ProgramId, location: Int, x: Float, y: Float) { GL20.glUniform2f(location, x, y) }
-    fun uniform3f(program: ProgramId, location: Int, x: Float, y: Float, z: Float) { GL20.glUniform3f(location, x, y, z) }
-    fun uniform4f(program: ProgramId, location: Int, x: Float, y: Float, z: Float, w: Float) { GL20.glUniform4f(location, x, y, z, w) }
-    fun uniform1i(program: ProgramId, location: Int, value: Int) { GL20.glUniform1i(location, value) }
-    fun uniform2i(program: ProgramId, location: Int, x: Int, y: Int) { GL20.glUniform2i(location, x, y) }
-    fun uniform3i(program: ProgramId, location: Int, x: Int, y: Int, z: Int) { GL20.glUniform3i(location, x, y, z) }
-    fun uniform4i(program: ProgramId, location: Int, x: Int, y: Int, z: Int, w: Int) { GL20.glUniform4i(location, x, y, z, w) }
+    fun uniform1f(location: Int, value: Float) = GL20.glUniform1f(location, value)
+    fun uniform2f(location: Int, x: Float, y: Float) = GL20.glUniform2f(location, x, y)
+    fun uniform3f(location: Int, x: Float, y: Float, z: Float) = GL20.glUniform3f(location, x, y, z)
+    fun uniform4f(location: Int, x: Float, y: Float, z: Float, w: Float) = GL20.glUniform4f(location, x, y, z, w)
+    fun uniform1i(location: Int, value: Int) = GL20.glUniform1i(location, value)
+    fun uniform2i(location: Int, x: Int, y: Int) = GL20.glUniform2i(location, x, y)
+    fun uniform3i(location: Int, x: Int, y: Int, z: Int) = GL20.glUniform3i(location, x, y, z)
+    fun uniform4i(location: Int, x: Int, y: Int, z: Int, w: Int) = GL20.glUniform4i(location, x, y, z, w)
+    fun uniform1fv(location: Int, values: FloatArray) = GL20.glUniform1fv(location, values)
+    fun uniform1iv(location: Int, values: IntArray) = GL20.glUniform1iv(location, values)
 
-    fun uniform1fv(program: ProgramId, location: Int, values: FloatArray) { GL20.glUniform1fv(location, values) }
-    fun uniform1iv(program: ProgramId, location: Int, values: IntArray) { GL20.glUniform1iv(location, values) }
-
-    fun uniformMatrix2f(program: ProgramId, location: Int, transpose: Boolean, value: org.joml.Matrix2f) {
-        org.lwjgl.system.MemoryStack.stackPush().use { stack ->
-            GL20.glUniformMatrix2fv(location, transpose, value.get(stack.mallocFloat(4)))
-        }
+    fun uniformMatrix2f(location: Int, transpose: Boolean, value: org.joml.Matrix2f) {
+        MemoryStack.stackPush().use { stack -> GL20.glUniformMatrix2fv(location, transpose, value.get(stack.mallocFloat(4))) }
     }
 
-    fun uniformMatrix3f(program: ProgramId, location: Int, transpose: Boolean, value: org.joml.Matrix3f) {
-        org.lwjgl.system.MemoryStack.stackPush().use { stack ->
-            GL20.glUniformMatrix3fv(location, transpose, value.get(stack.mallocFloat(9)))
-        }
+    fun uniformMatrix3f(location: Int, transpose: Boolean, value: org.joml.Matrix3f) {
+        MemoryStack.stackPush().use { stack -> GL20.glUniformMatrix3fv(location, transpose, value.get(stack.mallocFloat(9))) }
     }
 
-    fun uniformMatrix4f(program: ProgramId, location: Int, transpose: Boolean, value: org.joml.Matrix4f) {
-        org.lwjgl.system.MemoryStack.stackPush().use { stack ->
-            GL20.glUniformMatrix4fv(location, transpose, value.get(stack.mallocFloat(16)))
-        }
+    fun uniformMatrix4f(location: Int, transpose: Boolean, value: org.joml.Matrix4f) {
+        MemoryStack.stackPush().use { stack -> GL20.glUniformMatrix4fv(location, transpose, value.get(stack.mallocFloat(16))) }
     }
 
-    data class ActiveUniform(
-        val name: String,
-        val size: Int,
-        val type: Int,
-    )
+    data class ActiveUniform(val name: String, val size: Int, val type: Int)
 
-    fun genVertexArrays(): VertexArrayId {
-        return VertexArrayId(GL30.glGenVertexArrays())
-    }
+    // ---- vertex arrays -----------------------------------------------------------
+    fun genVertexArrays(): VertexArrayId = VertexArrayId(GL30.glGenVertexArrays())
 
     fun bindVertexArray(vao: VertexArrayId) {
+        if (boundVertexArray == vao) return
         GL30.glBindVertexArray(vao.id)
+        boundVertexArray = vao
     }
 
     fun deleteVertexArrays(vao: VertexArrayId) {
+        if (boundVertexArray == vao) boundVertexArray = VertexArrayId(0)
         GL30.glDeleteVertexArrays(vao.id)
-
     }
 
-
-
-    fun genBuffers(): BufferId {
-        return BufferId(GL15.glGenBuffers())
-    }
+    // ---- buffers -------------------------------------------------------------------
+    fun genBuffers(): BufferId = BufferId(GL15.glGenBuffers())
 
     fun bindBuffer(target: BufferTarget, buffer: BufferId) {
+        if (boundBuffers[target.glEnum] == buffer) return
         GL15.glBindBuffer(target.glEnum, buffer.id)
+        boundBuffers[target.glEnum] = buffer
     }
 
-    fun nBufferData(target: BufferTarget, size: Long, data: Long, usage: BufferUsage) {
+    fun nBufferData(target: BufferTarget, size: Long, data: Long, usage: BufferUsage) =
         GL15.nglBufferData(target.glEnum, size, data, usage.glEnum)
-    }
 
-    fun nBufferSubData(target: BufferTarget, offset: Long, size: Long, data: Long) {
+    fun nBufferSubData(target: BufferTarget, offset: Long, size: Long, data: Long) =
         GL15.nglBufferSubData(target.glEnum, offset, size, data)
-    }
 
     fun deleteBuffers(buffer: BufferId) {
+        boundBuffers.entries.removeAll { it.value == buffer }
         GL15.glDeleteBuffers(buffer.id)
     }
 
-
-
-    fun genTextures(): TextureId {
-        return TextureId(GL11.glGenTextures())
-    }
+    // ---- textures -----------------------------------------------------------------
+    fun genTextures(): TextureId = TextureId(GL11.glGenTextures())
 
     fun activeTexture(unit: Int) {
+        if (activeUnit == unit) return
         GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit)
+        activeUnit = unit
     }
 
-    fun bindTexture(target: TextureTarget, texture: TextureId) {
+    fun bindTexture(target: TextureTarget, texture: TextureId, unit: Int = activeUnit) {
+        activeTexture(unit)
+        if (boundTextures[unit] == texture) return
         GL11.glBindTexture(target.glEnum, texture.id)
+        boundTextures[unit] = texture
     }
 
-    fun texParameteri(target: TextureTarget, parameter: Int, value: Int) {
-        GL11.glTexParameteri(target.glEnum, parameter, value)
-    }
-
-    fun pixelStorei(parameter: Int, value: Int) {
-        GL11.glPixelStorei(parameter, value)
-    }
-
-    fun texParameterf(target: TextureTarget, parameter: Int, value: Float) {
-        GL11.glTexParameterf(target.glEnum, parameter, value)
-    }
+    fun texParameteri(target: TextureTarget, parameter: Int, value: Int) = GL11.glTexParameteri(target.glEnum, parameter, value)
+    fun pixelStorei(parameter: Int, value: Int) = GL11.glPixelStorei(parameter, value)
+    fun texParameterf(target: TextureTarget, parameter: Int, value: Float) = GL11.glTexParameterf(target.glEnum, parameter, value)
 
     fun texImage2D(
-        target: TextureTarget,
-        level: Int,
-        internalFormat: TextureInternalFormat,
-        width: Int,
-        height: Int,
-        format: TextureFormat,
-        dataType: TextureDataType,
-        data: java.nio.ByteBuffer?,
-    ) {
-        GL11.glTexImage2D(
-            target.glEnum,
-            level,
-            internalFormat.glEnum,
-            width,
-            height,
-            0,
-            format.glEnum,
-            dataType.glEnum,
-            data,
-        )
-    }
+        target: TextureTarget, level: Int, internalFormat: TextureInternalFormat,
+        width: Int, height: Int, format: TextureFormat, dataType: TextureDataType, data: java.nio.ByteBuffer?,
+    ) = GL11.glTexImage2D(target.glEnum, level, internalFormat.glEnum, width, height, 0, format.glEnum, dataType.glEnum, data)
 
     fun texSubImage2D(
-        target: TextureTarget,
-        level: Int,
-        xOffset: Int,
-        yOffset: Int,
-        width: Int,
-        height: Int,
-        format: TextureFormat,
-        dataType: TextureDataType,
-        data: java.nio.ByteBuffer,
-    ) {
-        GL11.glTexSubImage2D(
-            target.glEnum,
-            level,
-            xOffset,
-            yOffset,
-            width,
-            height,
-            format.glEnum,
-            dataType.glEnum,
-            data,
-        )
-    }
+        target: TextureTarget, level: Int, xOffset: Int, yOffset: Int,
+        width: Int, height: Int, format: TextureFormat, dataType: TextureDataType, data: java.nio.ByteBuffer,
+    ) = GL11.glTexSubImage2D(target.glEnum, level, xOffset, yOffset, width, height, format.glEnum, dataType.glEnum, data)
 
-    fun generateMipmap(target: TextureTarget) {
-        GL30.glGenerateMipmap(target.glEnum)
-    }
+    fun generateMipmap(target: TextureTarget) = GL30.glGenerateMipmap(target.glEnum)
 
     fun deleteTextures(texture: TextureId) {
+        boundTextures.entries.removeAll { it.value == texture }
         GL11.glDeleteTextures(texture.id)
     }
 
+    // ---- framebuffers (offscreen render targets) -----------------------------------
+    fun genFramebuffers(): FramebufferId = FramebufferId(GL30.glGenFramebuffers())
 
-    fun drawArrays(mode: DrawMode,first: Int, count: Int) {
-        GL15.glDrawArrays(mode.glEnum, first, count)
+    fun bindFramebuffer(fbo: FramebufferId) {
+        if (boundFramebuffer == fbo) return
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo.id)
+        boundFramebuffer = fbo
+    }
+
+    fun framebufferTexture2D(attachment: Int, target: TextureTarget, texture: TextureId, level: Int = 0) =
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, attachment, target.glEnum, texture.id, level)
+
+    fun checkFramebufferStatus(): Int = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER)
+
+    fun deleteFramebuffers(fbo: FramebufferId) {
+        if (boundFramebuffer == fbo) boundFramebuffer = FramebufferId(0)
+        GL30.glDeleteFramebuffers(fbo.id)
+    }
+
+    fun genRenderbuffers(): RenderbufferId = RenderbufferId(GL30.glGenRenderbuffers())
+    fun bindRenderbuffer(rbo: RenderbufferId) = GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, rbo.id)
+    fun renderbufferStorage(internalFormat: TextureInternalFormat, width: Int, height: Int) =
+        GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, internalFormat.glEnum, width, height)
+    fun framebufferRenderbuffer(attachment: Int, rbo: RenderbufferId) =
+        GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, attachment, GL30.GL_RENDERBUFFER, rbo.id)
+    fun deleteRenderbuffers(rbo: RenderbufferId) = GL30.glDeleteRenderbuffers(rbo.id)
+
+    // ---- pipeline state ------------------------------------------------------------
+    fun viewport(x: Int, y: Int, width: Int, height: Int) = GL11.glViewport(x, y, width, height)
+
+    fun clearColor(r: Float, g: Float, b: Float, a: Float) = GL11.glClearColor(r, g, b, a)
+
+    fun clear(color: Boolean = true, depth: Boolean = false, stencil: Boolean = false) {
+        var mask = 0
+        if (color) mask = mask or GL11.GL_COLOR_BUFFER_BIT
+        if (depth) mask = mask or GL11.GL_DEPTH_BUFFER_BIT
+        if (stencil) mask = mask or GL11.GL_STENCIL_BUFFER_BIT
+        if (mask != 0) GL11.glClear(mask)
+    }
+
+    fun setBlendMode(mode: BlendMode) {
+        if (blendMode == mode) return
+        if (mode.enabled) {
+            if (!blendMode.enabled) GL11.glEnable(GL11.GL_BLEND)
+            GL11.glBlendFunc(mode.src, mode.dst)
+        } else {
+            GL11.glDisable(GL11.GL_BLEND)
+        }
+        blendMode = mode
+    }
+
+    fun setDepthTest(enabled: Boolean) {
+        if (depthTestEnabled == enabled) return
+        if (enabled) GL11.glEnable(GL11.GL_DEPTH_TEST) else GL11.glDisable(GL11.GL_DEPTH_TEST)
+        depthTestEnabled = enabled
+    }
+
+    fun setScissor(x: Int, y: Int, width: Int, height: Int) {
+        if (!scissorEnabled) {
+            GL11.glEnable(GL11.GL_SCISSOR_TEST)
+            scissorEnabled = true
+        }
+        GL11.glScissor(x, y, width, height)
+    }
+
+    fun clearScissor() {
+        if (!scissorEnabled) return
+        GL11.glDisable(GL11.GL_SCISSOR_TEST)
+        scissorEnabled = false
+    }
+
+    fun drawArrays(mode: DrawMode, first: Int, count: Int) {
+        if (count <= 0) return
+        GL11.glDrawArrays(mode.glEnum, first, count)
     }
 }

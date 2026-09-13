@@ -1,11 +1,12 @@
 package kofeychi.taksa.api.vertex.builder
 
-import org.lwjgl.system.MemoryUtil
 import kofeychi.taksa.api.vertex.Format
+import org.lwjgl.system.MemoryUtil
 
+/** Zero-overhead builder: no per-push format validation. Use in production hot loops once your vertex layout is known-correct (validate first with [ValidatingBuilder] during development). */
 class DirectBuilder(
     initialCapacity: Int,
-    format: Format
+    format: Format,
 ) : AbstractVertexBuilder(initialCapacity, format) {
 
     override fun push() {
@@ -32,23 +33,16 @@ class DirectBuilder(
 
     override fun pushFloat3(x: Float, y: Float, z: Float) {
         ensureCapacity(Float.SIZE_BYTES * 3)
-        MemoryUtil.memPutFloat(address + pointer, x)
-        pointer += Float.SIZE_BYTES
-        MemoryUtil.memPutFloat(address + pointer, y)
-        pointer += Float.SIZE_BYTES
-        MemoryUtil.memPutFloat(address + pointer, z)
-        pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, x); pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, y); pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, z); pointer += Float.SIZE_BYTES
     }
 
     override fun pushFloat4(x: Float, y: Float, z: Float, w: Float) {
         ensureCapacity(Float.SIZE_BYTES * 4)
-        MemoryUtil.memPutFloat(address + pointer, x)
-        pointer += Float.SIZE_BYTES
-        MemoryUtil.memPutFloat(address + pointer, y)
-        pointer += Float.SIZE_BYTES
-        MemoryUtil.memPutFloat(address + pointer, z)
-        pointer += Float.SIZE_BYTES
-        MemoryUtil.memPutFloat(address + pointer, w)
-        pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, x); pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, y); pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, z); pointer += Float.SIZE_BYTES
+        MemoryUtil.memPutFloat(address + pointer, w); pointer += Float.SIZE_BYTES
     }
 }
